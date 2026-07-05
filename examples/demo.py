@@ -1,23 +1,15 @@
 import procyl
 
-# Create workers
-procyl.create("hello", """
-print("Hello from Procyl!")
-""")
+procyl.create(
+    "hello",
+    'print("Hello from Procyl!")',
+    icon="hello.png",
+    args=["--demo"],
+)
 
-procyl.create("math", """
-result = 2 + 2
-print("Result:", result)
-""")
-
-# Run workers
 print(procyl.run("hello"))
-print(procyl.run("math"))
-
-# Status check
+print(procyl.precompile("hello", output_dir="./dist", compiler="python"))
+print(procyl.runtime_compile("hello", compiler="python"))
 print(procyl.status("hello"))
-print(procyl.status("unknown"))
-
-# Delete worker
 procyl.delete("hello")
 print(procyl.status("hello"))
