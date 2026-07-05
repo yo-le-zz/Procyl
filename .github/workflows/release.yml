@@ -67,7 +67,9 @@ jobs:
       - name: Rename wheel for Linux
         run: |
           cd dist
-          mv procyl-*-py3-none-any.whl procyl-*-py3-none-linux_x86_64.whl || true
+          for f in procyl-*-py3-none-any.whl; do
+            mv "$f" "${f%-py3-none-any.whl}-py3-none-linux_x86_64.whl"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -92,7 +94,8 @@ jobs:
       - name: Rename wheel for Windows
         run: |
           cd dist
-          ren procyl-*-py3-none-any.whl procyl-*-py3-none-win_amd64.whl
+          Get-ChildItem "procyl-*-py3-none-any.whl" | Rename-Item -NewName { $_.Name -replace '-py3-none-any.whl', '-py3-none-win_amd64.whl' }
+        shell: pwsh
 
       - uses: actions/upload-artifact@v4
         with:
@@ -117,7 +120,9 @@ jobs:
       - name: Rename wheel for macOS
         run: |
           cd dist
-          mv procyl-*-py3-none-any.whl procyl-*-py3-none-macosx_10_9_x86_64.whl || true
+          for f in procyl-*-py3-none-any.whl; do
+            mv "$f" "${f%-py3-none-any.whl}-py3-none-macosx_10_9_x86_64.whl"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
