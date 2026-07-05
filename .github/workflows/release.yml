@@ -110,7 +110,7 @@ jobs:
           path: dist/
 
   release:
-    needs: [build-linux, build-windows, build-macos]
+    needs: build-linux
     runs-on: ubuntu-latest
 
     steps:
@@ -118,28 +118,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dist-linux
-          path: dist/linux
-
-      - name: Download Windows dist
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-windows
-          path: dist/windows
-
-      - name: Download macOS dist
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-macos
-          path: dist/macos
+          path: dist
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.tests.outputs.version }}
           name: Procyl v${{ needs.tests.outputs.version }}
-          files: |
-            dist/linux/**/*
-            dist/windows/**/*
-            dist/macos/**/*
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
