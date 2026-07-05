@@ -64,6 +64,11 @@ jobs:
 
       - run: python -m build
 
+      - name: Rename wheel for Linux
+        run: |
+          cd dist
+          mv procyl-*-py3-none-any.whl procyl-*-py3-none-linux_x86_64.whl || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-linux
@@ -84,6 +89,11 @@ jobs:
 
       - run: python -m build
 
+      - name: Rename wheel for Windows
+        run: |
+          cd dist
+          ren procyl-*-py3-none-any.whl procyl-*-py3-none-win_amd64.whl
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-windows
@@ -103,6 +113,11 @@ jobs:
       - run: pip install build
 
       - run: python -m build
+
+      - name: Rename wheel for macOS
+        run: |
+          cd dist
+          mv procyl-*-py3-none-any.whl procyl-*-py3-none-macosx_10_9_x86_64.whl || true
 
       - uses: actions/upload-artifact@v4
         with:
@@ -138,9 +153,9 @@ jobs:
           tag_name: v${{ needs.tests.outputs.version }}
           name: Procyl v${{ needs.tests.outputs.version }}
           files: |
-            dist/linux/**/*.whl
-            dist/windows/**/*.whl
-            dist/macos/**/*.whl
-            dist/linux/**/*.tar.gz
+            dist/linux/*.whl
+            dist/linux/*.tar.gz
+            dist/windows/*.whl
+            dist/macos/*.whl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
