@@ -1,0 +1,118 @@
+name: Procyl Release
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pytest toml
+          pip install .
+
+      - name: Run tests
+        run: pytest tests -v
+
+      - name: Read version from pyproject.toml
+        id: version
+        run: |
+          python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])" > version.txt
+          echo "VERSION=$(cat version.txt)" >> $GITHUB_ENV
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag v${VERSION}
+          git push origin v${VERSION}
+
+  build-linux:
+    needs: tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install build
+
+      - run: python -m build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-dist
+          path: dist/
+
+  build-windows:
+    needs: tests
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install build
+
+      - run: python -m build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: dist/
+
+  build-macos:
+    needs: tests
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install build
+
+      - run: python -m build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dist
+          path: dist/
+
+  release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist_all
+
+      - name: Get version
+        run: echo "VERSION=$(cat version.txt)" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Procyl v${{ env.VERSION }}
+          files: dist_all/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
