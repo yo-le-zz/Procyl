@@ -118,13 +118,29 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dist-linux
-          path: dist
+          path: dist/linux
+
+      - name: Download Windows dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/windows
+
+      - name: Download macOS dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/macos
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.tests.outputs.version }}
           name: Procyl v${{ needs.tests.outputs.version }}
-          files: dist/*
+          files: |
+            dist/linux/**/*.whl
+            dist/windows/**/*.whl
+            dist/macos/**/*.whl
+            dist/linux/**/*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
