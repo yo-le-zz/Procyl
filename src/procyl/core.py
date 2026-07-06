@@ -2,12 +2,43 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
+from .dependencies import get_dependencies_from_code
+from .environment import get_environment
 from .runner import run_code, run_compiled
 from .worker import Worker, compile_worker
 
 _workers: Dict[str, Worker] = {}
+
+
+def prepare(
+    constraints: Optional[Dict[str, str]] = None,
+    requirements: Optional[str] = None,
+) -> bool:
+    """Prepare Python environment with dependencies.
+    
+    Args:
+        constraints: Dict like {"requests": "==2.32.3", "numpy": ">=2.3,<3"}
+        requirements: Path to requirements.txt
+        
+    Returns:
+        True if successful
+    """
+    # Collect all dependencies from existing workers
+    all_deps: Set[str] = set()
+    for worker in _workers.values():
+        all_deps.update(get_dependencies_from_code(worker.code))
+
+    # Get environment manager
+    env = get_environment()
+    
+    # Prepare environment
+    return env.prepare(
+        dependencies=all_deps,
+        constraints=constraints,
+        requirements_file=requirements,
+    )
 
 
 def _get_worker(name: str) -> Worker:
@@ -26,7 +57,23 @@ def create(
     timeout_seconds: Optional[int] = None,
     auto_delete_after: Optional[int] = None,
     compile_args: Optional[List[str]] = None,
-) -> Dict[str, object]:
+) -> Worker:
+    """Create a new worker.
+    
+    Args:
+        name: Worker name
+        code: Python code
+        icon: Icon path
+        args: Default arguments
+        compiler: Compiler to use (python/pyinstaller/nuitka/auto)
+        output_dir: Output directory for compiled artifact
+        timeout_seconds: Execution timeout
+        auto_delete_after: Auto-delete compiled artifact after N seconds
+        compile_args: Arguments for compiler
+        
+    Returns:
+        Worker object
+    """
     worker = Worker(
         name=name.strip(),
         code=code,
@@ -39,7 +86,7 @@ def create(
         compile_args=list(compile_args or []),
     )
     _workers[worker.name] = worker
-    return worker.to_dict()
+    return worker
 
 
 def precompile(

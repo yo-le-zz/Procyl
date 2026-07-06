@@ -1,13 +1,144 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import platform
+import psutil
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional, Dict, Set, Tuple
+from multiprocessing import Pool
+
+from .dependencies import get_dependencies_from_code
+
+
+# Module-level function for multiprocessing (must be picklable)
+def _run_worker_once(args: Tuple[str, Optional[str], Optional[List[str]], Optional[int]]) -> str:
+    """Execute a worker code or artifact once. Used for multiprocessing."""
+    code, artifact_path, args_list, timeout = args
+    
+    from .runner import run_code, run_compiled
+    
+    if artifact_path and os.path.exists(artifact_path):
+        return run_compiled(artifact_path, args_list or [], timeout_seconds=timeout)
+    return run_code(code, args_list or [], timeout_seconds=timeout)
+
+
+class WorkerData:
+    """Metadata about a worker."""
+
+    def __init__(self, worker: Worker):
+        self._worker = worker
+        self._metadata_path = None
+        self._load_metadata()
+
+    def _load_metadata(self) -> None:
+        """Load metadata from disk if exists."""
+        if self._worker.artifact_path:
+            base = os.path.dirname(self._worker.artifact_path)
+            meta_file = os.path.join(base, f"{self._worker.name}.meta.json")
+            if os.path.exists(meta_file):
+                self._metadata_path = meta_file
+                return
+        
+        # Try .procyl/.metadata
+        meta_file = os.path.join(".procyl", ".metadata", f"{self._worker.name}.json")
+        if os.path.exists(meta_file):
+            self._metadata_path = meta_file
+
+    def _get_metadata(self) -> Dict:
+        """Get metadata dictionary."""
+        if self._metadata_path and os.path.exists(self._metadata_path):
+            with open(self._metadata_path) as f:
+                return json.load(f)
+        return {}
+
+    def _save_metadata(self, data: Dict) -> None:
+        """Save metadata to disk."""
+        os.makedirs(".procyl/.metadata", exist_ok=True)
+        meta_file = os.path.join(".procyl", ".metadata", f"{self._worker.name}.json")
+        with open(meta_file, "w") as f:
+            json.dump(data, f, indent=2)
+        self._metadata_path = meta_file
+
+    @property
+    def hash(self) -> str:
+        """Hash of the worker code."""
+        return hashlib.sha256(self._worker.code.encode()).hexdigest()[:16]
+
+    @property
+    def compiler(self) -> str:
+        """Compiler used."""
+        return self._worker.compiler
+
+    @property
+    def compiled(self) -> bool:
+        """Whether worker is compiled."""
+        return bool(self._worker.artifact_path and os.path.exists(self._worker.artifact_path))
+
+    @property
+    def created_at(self) -> Optional[str]:
+        """Creation timestamp."""
+        meta = self._get_metadata()
+        return meta.get("created_at")
+
+    @property
+    def last_build(self) -> Optional[str]:
+        """Last build timestamp."""
+        if not self.compiled:
+            return None
+        return os.path.getctime(self._worker.artifact_path) if self._worker.artifact_path else None
+
+    @property
+    def dependencies(self) -> Set[str]:
+        """External dependencies."""
+        return get_dependencies_from_code(self._worker.code)
+
+    @property
+    def python_version(self) -> str:
+        """Python version."""
+        return sys.version.split()[0]
+
+    @property
+    def platform(self) -> str:
+        """Platform."""
+        return f"{platform.system()}-{platform.machine()}"
+
+    @property
+    def path(self) -> Optional[str]:
+        """Path to compiled artifact."""
+        return self._worker.artifact_path
+
+    @property
+    def size(self) -> int:
+        """Size in bytes of compiled artifact."""
+        if self._worker.artifact_path and os.path.exists(self._worker.artifact_path):
+            return os.path.getsize(self._worker.artifact_path)
+        return 0
+
+    @property
+    def pid(self) -> Optional[int]:
+        """Process ID if running."""
+        return getattr(self._worker, "_current_pid", None)
+
+    @property
+    def running(self) -> bool:
+        """Whether worker is currently running."""
+        pid = self.pid
+        if pid is None:
+            return False
+        try:
+            return psutil.pid_exists(pid)
+        except:
+            return False
 
 
 @dataclass
@@ -26,6 +157,15 @@ class Worker:
     thread: Optional[threading.Thread] = None
     progress_percent: int = 0
     progress_message: str = "idle"
+    _data: Optional[WorkerData] = field(default=None, init=False, repr=False)
+    _current_pid: Optional[int] = field(default=None, init=False, repr=False)
+
+    @property
+    def data(self) -> WorkerData:
+        """Get worker metadata."""
+        if self._data is None:
+            self._data = WorkerData(self)
+        return self._data
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +182,77 @@ class Worker:
             "progress_percent": self.progress_percent,
             "progress_message": self.progress_message,
         }
+
+    def verify(self) -> Dict[str, any]:
+        """Verify worker integrity and compile status.
+        
+        Returns:
+            Dict with verification results
+        """
+        results = {
+            "name": self.name,
+            "valid": True,
+            "issues": [],
+        }
+
+        # Check code
+        try:
+            compile(self.code, self.name, "exec")
+        except SyntaxError as e:
+            results["valid"] = False
+            results["issues"].append(f"Syntax error: {e}")
+
+        # Check dependencies availability
+        try:
+            deps = self.data.dependencies
+            if deps:
+                results["dependencies"] = list(deps)
+        except Exception as e:
+            results["issues"].append(f"Dependency scan error: {e}")
+
+        # Check compiled artifact
+        if self.artifact_path:
+            if not os.path.exists(self.artifact_path):
+                results["valid"] = False
+                results["issues"].append(f"Artifact not found: {self.artifact_path}")
+            else:
+                results["compiled"] = True
+                results["artifact_size"] = os.path.getsize(self.artifact_path)
+
+        return results
+
+    def run(self, count: int = 1, args: Optional[List[str]] = None) -> List[str]:
+        """Run worker multiple times in parallel.
+        
+        Args:
+            count: Number of parallel executions
+            args: Arguments to pass (overrides default)
+            
+        Returns:
+            List of outputs from each execution
+        """
+        effective_args = list(args or self.args or [])
+
+        if count <= 1:
+            # Single execution - don't need multiprocessing
+            return [_run_worker_once(
+                (self.code, self.artifact_path, effective_args, self.timeout_seconds)
+            )]
+
+        # Prepare arguments for pool
+        pool_args = [
+            (self.code, self.artifact_path, effective_args, self.timeout_seconds)
+            for _ in range(count)
+        ]
+
+        # Try multiprocessing, fall back to sequential if needed
+        try:
+            with Pool(processes=min(count, os.cpu_count() or 1)) as pool:
+                results = pool.map(_run_worker_once, pool_args)
+            return results
+        except (RuntimeError, ConnectionResetError, Exception):
+            # Fallback for environments where multiprocessing doesn't work well
+            return [_run_worker_once(args_tuple) for args_tuple in pool_args]
 
 
 def _choose_compiler(compiler: Optional[str]) -> str:

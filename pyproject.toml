@@ -1,6 +1,6 @@
 [project]
 name = "procyl"
-version = "0.1.1"
+version = "1.0.0"
 description = "A lightweight worker system for creating, compiling, running, and managing Python-based processes"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -9,7 +9,9 @@ authors = [
     { name = "yolezz" }
 ]
 
-dependencies = []
+dependencies = [
+    "psutil>=5.9.0",
+]
 
 [project.optional-dependencies]
 compile = [
