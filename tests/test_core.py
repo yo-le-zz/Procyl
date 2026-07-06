@@ -30,13 +30,13 @@ def test_create_and_run():
         auto_delete_after=5,
     )
     # Vérifie que le worker a été créé avec le bon nom
-    assert worker["name"] == "t1"
+    assert worker.name == "t1"
     # Vérifie que l'état initial est "ready"
-    assert worker["state"] == "ready"
+    assert worker.state == "ready"
     # Vérifie que le timeout a été correctement configuré
-    assert worker["timeout_seconds"] == 3
+    assert worker.timeout_seconds == 3
     # Vérifie que l'auto-delete a été correctement configuré
-    assert worker["auto_delete_after"] == 5
+    assert worker.auto_delete_after == 5
     # Exécute le worker et vérifie la sortie
     output = procyl.run("t1")
     assert "ok" in output

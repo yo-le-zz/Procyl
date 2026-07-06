@@ -231,7 +231,7 @@ class Worker:
         Returns:
             List of outputs from each execution
         """
-        effective_args = list(args or self.args or [])
+        effective_args = list(args if args is not None else self.args)
 
         if count <= 1:
             # Single execution - don't need multiprocessing
